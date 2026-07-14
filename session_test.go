@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"runtime"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
 
@@ -327,6 +329,81 @@ func TestSessionRequestPreCanceledContextWithAvailableWriteGateDoesNotWrite(t *t
 	}
 }
 
+func TestSessionWriteFailurePublishesBeforeQueuedWriteStarts(t *testing.T) {
+	previousProcs := runtime.GOMAXPROCS(1)
+	defer runtime.GOMAXPROCS(previousProcs)
+
+	writeErr := errors.New("first write failed")
+	conn := newWriteFailureHandoffConnection(writeErr)
+	session := newSession(conn, time.Second, time.Hour, nil)
+
+	firstResponse, err := session.registerPending("first-write")
+	if err != nil {
+		t.Fatalf("registerPending(first-write) error = %v", err)
+	}
+	firstResult, _ := sendPendingRequestAsync(session, "first-write", firstResponse)
+	<-conn.firstWriteStarted
+
+	secondResponse, err := session.registerPending("second-write")
+	if err != nil {
+		t.Fatalf("registerPending(second-write) error = %v", err)
+	}
+	secondResult, secondSendStarted := sendPendingRequestAsync(session, "second-write", secondResponse)
+	<-secondSendStarted
+	runtime.Gosched()
+
+	session.mu.Lock()
+	close(conn.releaseFirstWrite)
+	runtime.Gosched()
+	writeCalls := conn.writeCalls()
+	session.mu.Unlock()
+
+	firstErr := receiveSessionResult(t, firstResult)
+	secondErr := receiveSessionResult(t, secondResult)
+	if firstErr == nil || !errors.Is(firstErr, writeErr) {
+		t.Fatalf("first request error = %v, want first write failure", firstErr)
+	}
+	if secondErr != firstErr {
+		t.Fatalf("second request error = %v, want original terminal cause %v", secondErr, firstErr)
+	}
+	if writeCalls != 1 {
+		t.Fatalf("connection Write calls before terminal publication = %d, want 1", writeCalls)
+	}
+	session.mu.Lock()
+	pending := len(session.pending)
+	session.mu.Unlock()
+	if pending != 0 {
+		t.Fatalf("pending request count = %d, want 0", pending)
+	}
+}
+
+func receiveSessionResult(t *testing.T, result <-chan error) error {
+	t.Helper()
+	select {
+	case err := <-result:
+		return err
+	case <-time.After(time.Second):
+		t.Fatal("session request did not complete")
+		return nil
+	}
+}
+
+func sendPendingRequestAsync(
+	session *session,
+	requestID string,
+	response chan protocol.Frame,
+) (<-chan error, <-chan struct{}) {
+	result := make(chan error, 1)
+	started := make(chan struct{})
+	go func() {
+		close(started)
+		result <- session.sendPendingRequest(
+			context.Background(), context.Background(), requestID, []byte(requestID), response,
+		)
+	}()
+	return result, started
+}
+
 type fakeRead struct {
 	data []byte
 	err  error
@@ -343,11 +420,50 @@ type blockingWriteConnection struct {
 	writeStarted chan struct{}
 }
 
+type writeFailureHandoffConnection struct {
+	*fakeConnection
+	firstWriteStarted chan struct{}
+	releaseFirstWrite chan struct{}
+	writeErr          error
+
+	mu    sync.Mutex
+	calls int
+}
+
 func newBlockingWriteConnection() *blockingWriteConnection {
 	return &blockingWriteConnection{
 		fakeConnection: newFakeConnection(),
 		writeStarted:   make(chan struct{}, 2),
 	}
+}
+
+func newWriteFailureHandoffConnection(writeErr error) *writeFailureHandoffConnection {
+	return &writeFailureHandoffConnection{
+		fakeConnection:    newFakeConnection(),
+		firstWriteStarted: make(chan struct{}),
+		releaseFirstWrite: make(chan struct{}),
+		writeErr:          writeErr,
+	}
+}
+
+func (c *writeFailureHandoffConnection) Write(context.Context, []byte) error {
+	c.mu.Lock()
+	c.calls++
+	call := c.calls
+	c.mu.Unlock()
+
+	if call == 1 {
+		close(c.firstWriteStarted)
+		<-c.releaseFirstWrite
+		return c.writeErr
+	}
+	return nil
+}
+
+func (c *writeFailureHandoffConnection) writeCalls() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.calls
 }
 
 func (c *blockingWriteConnection) Write(ctx context.Context, _ []byte) error {

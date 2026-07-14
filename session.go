@@ -195,7 +195,27 @@ func (s *session) sendPendingRequest(
 	data []byte,
 	response chan protocol.Frame,
 ) error {
-	writeStarted, err := s.write(requestCtx, data)
+	var writeStarted bool
+	var err error
+	select {
+	case <-requestCtx.Done():
+		err = requestCtx.Err()
+	case <-s.done:
+		err = s.err()
+	case <-s.writeGate:
+		defer func() {
+			s.writeGate <- struct{}{}
+		}()
+		select {
+		case <-s.done:
+			err = s.err()
+		default:
+			if err = requestCtx.Err(); err == nil {
+				writeStarted = true
+				err = s.conn.Write(requestCtx, data)
+			}
+		}
+	}
 	if err == nil {
 		return nil
 	}
@@ -253,21 +273,6 @@ func (s *session) awaitResponse(
 		return s.err()
 	}
 }
-
-func (s *session) write(ctx context.Context, data []byte) (bool, error) {
-	select {
-	case <-ctx.Done():
-		return false, ctx.Err()
-	case <-s.done:
-		return false, s.err()
-	case <-s.writeGate:
-	}
-	defer func() {
-		s.writeGate <- struct{}{}
-	}()
-	return true, s.conn.Write(ctx, data)
-}
-
 func (s *session) removePending(requestID string, response chan protocol.Frame) {
 	s.mu.Lock()
 	if s.pending[requestID] == response {
