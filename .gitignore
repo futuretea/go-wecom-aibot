@@ -1,2 +1,6 @@
+
+enhancements/
 third-party-projects/
 .env
+.project/
+.auto-runs/
