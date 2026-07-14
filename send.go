@@ -107,5 +107,14 @@ func (c *Client) replySession(
 func (c *Client) currentSession() *activeSession {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	return c.active
+	active := c.active
+	if active == nil {
+		return nil
+	}
+	select {
+	case <-active.session.done:
+		return nil
+	default:
+		return active
+	}
 }
