@@ -128,11 +128,7 @@ func (c *Client) runSession(ctx context.Context, handler Handler) (bool, error) 
 		return false, &ConnectionError{Err: err}
 	}
 
-	sessionID, err := newRequestID()
-	if err != nil {
-		_ = conn.Close()
-		return false, &ProtocolError{Err: fmt.Errorf("generate session id: %w", err)}
-	}
+	sessionID := newRequestID()
 	dispatcher := newHandlerDispatcher(handler, sessionID)
 	ready := make(chan struct{})
 	var current *session
@@ -168,10 +164,7 @@ func (c *Client) runSession(ctx context.Context, handler Handler) (bool, error) 
 }
 
 func (c *Client) subscribe(ctx context.Context, current *session) error {
-	requestID, err := newRequestID()
-	if err != nil {
-		return &ProtocolError{Err: fmt.Errorf("generate subscribe request id: %w", err)}
-	}
+	requestID := newRequestID()
 	data, err := protocol.EncodeSubscribe(requestID, c.config.BotID, c.config.Secret)
 	if err != nil {
 		return &ProtocolError{Err: fmt.Errorf("encode subscribe: %w", err)}

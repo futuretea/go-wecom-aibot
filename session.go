@@ -88,10 +88,7 @@ func (s *session) startHeartbeat() {
 }
 
 func (s *session) sendHeartbeat() error {
-	requestID, err := newRequestID()
-	if err != nil {
-		return &ProtocolError{Err: fmt.Errorf("generate heartbeat request id: %w", err)}
-	}
+	requestID := newRequestID()
 	data, err := protocol.EncodePing(requestID)
 	if err != nil {
 		return &ProtocolError{Err: fmt.Errorf("encode heartbeat: %w", err)}
@@ -303,10 +300,8 @@ func (s *session) wait() error {
 	return s.err()
 }
 
-func newRequestID() (string, error) {
+func newRequestID() string {
 	var id [16]byte
-	if _, err := rand.Read(id[:]); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(id[:]), nil
+	rand.Read(id[:])
+	return hex.EncodeToString(id[:])
 }

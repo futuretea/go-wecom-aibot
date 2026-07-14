@@ -74,10 +74,7 @@ func (c *Client) SendMarkdown(ctx context.Context, target Target, content string
 	if active == nil {
 		return ErrNotConnected
 	}
-	requestID, err := newRequestID()
-	if err != nil {
-		return &ProtocolError{Err: fmt.Errorf("generate send request id: %w", err)}
-	}
+	requestID := newRequestID()
 	data, err := protocol.EncodeSendMarkdown(requestID, target.ID, wireChatType, content)
 	if err != nil {
 		return &ProtocolError{Err: fmt.Errorf("encode markdown send: %w", err)}
