@@ -39,11 +39,8 @@ func (c websocketConnector) Dial(ctx context.Context) (connection, error) {
 		},
 	}
 	options := &websocket.DialOptions{HTTPClient: httpClient}
-	conn, response, err := websocket.Dial(ctx, c.endpoint, options)
+	conn, _, err := websocket.Dial(ctx, c.endpoint, options)
 	if err != nil {
-		if response != nil && response.Body != nil {
-			_ = response.Body.Close()
-		}
 		return nil, err
 	}
 	return websocketConnection{conn: conn}, nil
