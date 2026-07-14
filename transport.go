@@ -76,13 +76,21 @@ type websocketConnection struct {
 	conn *websocket.Conn
 }
 
+type unexpectedWebSocketMessageTypeError struct {
+	messageType websocket.MessageType
+}
+
+func (e *unexpectedWebSocketMessageTypeError) Error() string {
+	return fmt.Sprintf("unexpected WebSocket message type %d", e.messageType)
+}
+
 func (c websocketConnection) Read(ctx context.Context) ([]byte, error) {
 	messageType, data, err := c.conn.Read(ctx)
 	if err != nil {
 		return nil, err
 	}
 	if messageType != websocket.MessageText {
-		return nil, fmt.Errorf("unexpected WebSocket message type %d", messageType)
+		return nil, &unexpectedWebSocketMessageTypeError{messageType: messageType}
 	}
 	return data, nil
 }

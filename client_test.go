@@ -5,8 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/coder/websocket"
 )
 
 func TestRunHandlerCanWaitForMarkdownReply(t *testing.T) {
@@ -139,6 +144,65 @@ func TestRunDoesNotRetrySubscriptionAPIError(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("Run() did not return subscription API error")
+	}
+}
+
+func TestRunReturnsProtocolErrorWithoutRetryForBinaryWebSocketMessage(t *testing.T) {
+	releaseServer := make(chan struct{})
+	serverErrors := make(chan error, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := websocket.Accept(w, r, nil)
+		if err != nil {
+			serverErrors <- fmt.Errorf("Accept() error: %w", err)
+			return
+		}
+		defer func() { _ = conn.CloseNow() }()
+		if err := conn.Write(r.Context(), websocket.MessageBinary, []byte{0x01}); err != nil {
+			serverErrors <- fmt.Errorf("Write() error: %w", err)
+			return
+		}
+		<-releaseServer
+	}))
+	defer func() {
+		close(releaseServer)
+		server.Close()
+	}()
+
+	client, err := NewClient(Config{BotID: "bot", Secret: "secret"})
+	if err != nil {
+		t.Fatalf("NewClient() error = %v", err)
+	}
+	client.connector = websocketConnector{
+		endpoint: "ws" + strings.TrimPrefix(server.URL, "http"),
+	}
+	retryCalls := 0
+	var retryErr error
+	client.config.OnRetry = func(err error, _ time.Duration) {
+		retryCalls++
+		retryErr = err
+	}
+	client.waitRetry = func(context.Context, time.Duration) error {
+		if retryErr == nil {
+			return errors.New("retry wait called without retry error")
+		}
+		return retryErr
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	err = client.Run(ctx, HandlerFunc(func(context.Context, *Message) error { return nil }))
+
+	var protocolErr *ProtocolError
+	if !errors.As(err, &protocolErr) {
+		t.Errorf("Run() error = %v, want ProtocolError", err)
+	}
+	if retryCalls != 0 {
+		t.Errorf("OnRetry calls = %d, want 0", retryCalls)
+	}
+	select {
+	case err := <-serverErrors:
+		t.Errorf("WebSocket server error = %v", err)
+	default:
 	}
 }
 

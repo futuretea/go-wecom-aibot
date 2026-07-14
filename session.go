@@ -109,7 +109,12 @@ func (s *session) readLoop() {
 		data, err := s.conn.Read(s.ctx)
 		if err != nil {
 			if s.ctx.Err() == nil {
-				s.stop(&ConnectionError{Err: err})
+				var messageTypeErr *unexpectedWebSocketMessageTypeError
+				if errors.As(err, &messageTypeErr) {
+					s.stop(&ProtocolError{Err: err})
+				} else {
+					s.stop(&ConnectionError{Err: err})
+				}
 			}
 			return
 		}
@@ -218,7 +223,7 @@ func (s *session) classifyWriteError(
 	}
 	connectionErr := &ConnectionError{Err: err}
 	s.stop(connectionErr)
-	return connectionErr
+	return s.err()
 }
 
 func (s *session) awaitResponse(
@@ -275,11 +280,11 @@ func (s *session) stop(cause error) {
 		s.mu.Lock()
 		s.cause = cause
 		s.mu.Unlock()
+		close(s.done)
 		if s.cancel != nil {
 			s.cancel()
 		}
 		_ = s.conn.Close()
-		close(s.done)
 	})
 }
 
