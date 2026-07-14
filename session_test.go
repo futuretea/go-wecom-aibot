@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strconv"
 	"testing"
 	"time"
 
@@ -281,6 +282,47 @@ func TestSessionRequestCancellationBeforeWriteKeepsSessionActive(t *testing.T) {
 	select {
 	case data := <-conn.writes:
 		t.Fatalf("unexpected network write: %s", data)
+	default:
+	}
+}
+
+func TestSessionRequestPreCanceledContextWithAvailableWriteGateDoesNotWrite(t *testing.T) {
+	conn := newFakeConnection()
+	session := newSession(conn, time.Second, time.Hour, nil)
+	session.start(context.Background())
+	defer session.stop(context.Canceled)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	const attempts = 256
+	for i := 0; i < attempts; i++ {
+		requestID := "pre-canceled-" + strconv.Itoa(i)
+		request, err := protocol.EncodePing(requestID)
+		if err != nil {
+			t.Fatalf("EncodePing() error = %v", err)
+		}
+
+		_, err = session.request(ctx, requestID, request)
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("request() attempt %d error = %v, want context.Canceled", i, err)
+		}
+	}
+
+	select {
+	case data := <-conn.writes:
+		t.Fatalf("unexpected network write: %s", data)
+	default:
+	}
+	session.mu.Lock()
+	pending := len(session.pending)
+	session.mu.Unlock()
+	if pending != 0 {
+		t.Fatalf("pending request count = %d, want 0", pending)
+	}
+	select {
+	case <-session.done:
+		t.Fatal("session stopped for a request canceled before writing")
 	default:
 	}
 }

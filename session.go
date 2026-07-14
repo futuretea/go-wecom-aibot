@@ -160,6 +160,10 @@ func (s *session) request(
 	requestID string,
 	data []byte,
 ) (protocol.Frame, error) {
+	if err := ctx.Err(); err != nil {
+		return protocol.Frame{}, err
+	}
+
 	requestCtx, cancel := context.WithTimeout(ctx, s.requestTimeout)
 	defer cancel()
 
