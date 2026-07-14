@@ -329,6 +329,61 @@ func TestSessionRequestPreCanceledContextWithAvailableWriteGateDoesNotWrite(t *t
 	}
 }
 
+func TestSessionSendPendingRequestCanceledAfterWriteGateAcquisitionDoesNotWrite(t *testing.T) {
+	conn := newFakeConnection()
+	session := newSession(conn, time.Second, time.Hour, nil)
+	defer session.stop(context.Canceled)
+
+	const requestID = "post-acquire-canceled"
+	response, err := session.registerPending(requestID)
+	if err != nil {
+		t.Fatalf("registerPending() error = %v", err)
+	}
+	requestCtx := &postAcquireCancelContext{
+		Context:    context.Background(),
+		errChecked: make(chan struct{}),
+		canceled:   make(chan struct{}),
+	}
+	result := make(chan error, 1)
+	go func() {
+		result <- session.sendPendingRequest(
+			requestCtx, requestCtx, requestID, []byte(requestID), response,
+		)
+	}()
+
+	select {
+	case <-requestCtx.errChecked:
+		requestCtx.cancel()
+	case data := <-conn.writes:
+		requestCtx.cancel()
+		t.Fatalf("connection.Write() received %q before post-acquire cancellation check", data)
+	case <-time.After(time.Second):
+		requestCtx.cancel()
+		t.Fatal("sendPendingRequest() did not reach the post-acquire context check")
+	}
+
+	err = receiveSessionResult(t, result)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("sendPendingRequest() error = %v, want context.Canceled", err)
+	}
+	select {
+	case data := <-conn.writes:
+		t.Fatalf("unexpected network write after cancellation: %q", data)
+	default:
+	}
+	session.mu.Lock()
+	pending := len(session.pending)
+	session.mu.Unlock()
+	if pending != 0 {
+		t.Fatalf("pending request count = %d, want 0", pending)
+	}
+	select {
+	case <-session.done:
+		t.Fatal("session stopped for a request canceled before transport write")
+	default:
+	}
+}
+
 func TestSessionWriteFailurePublishesBeforeQueuedWriteStarts(t *testing.T) {
 	previousProcs := runtime.GOMAXPROCS(1)
 	defer runtime.GOMAXPROCS(previousProcs)
@@ -402,6 +457,29 @@ func sendPendingRequestAsync(
 		)
 	}()
 	return result, started
+}
+
+type postAcquireCancelContext struct {
+	context.Context
+	errChecked chan struct{}
+	canceled   chan struct{}
+	errOnce    sync.Once
+}
+
+func (c *postAcquireCancelContext) Done() <-chan struct{} {
+	return c.canceled
+}
+
+func (c *postAcquireCancelContext) Err() error {
+	c.errOnce.Do(func() {
+		close(c.errChecked)
+		<-c.canceled
+	})
+	return context.Canceled
+}
+
+func (c *postAcquireCancelContext) cancel() {
+	close(c.canceled)
 }
 
 type fakeRead struct {
