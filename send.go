@@ -30,7 +30,7 @@ func (c *Client) ReplyMarkdown(ctx context.Context, message *Message, content st
 	if err != nil {
 		return &ProtocolError{Err: fmt.Errorf("encode markdown reply: %w", err)}
 	}
-	_, err = active.session.request(ctx, message.requestID, data)
+	err = active.session.request(ctx, message.requestID, data)
 	return err
 }
 
@@ -52,7 +52,7 @@ func (c *Client) ReplyStream(ctx context.Context, message *Message, update Strea
 	if err != nil {
 		return &ProtocolError{Err: fmt.Errorf("encode stream reply: %w", err)}
 	}
-	_, err = active.session.request(ctx, message.requestID, data)
+	err = active.session.request(ctx, message.requestID, data)
 	return err
 }
 
@@ -79,7 +79,7 @@ func (c *Client) SendMarkdown(ctx context.Context, target Target, content string
 	if err != nil {
 		return &ProtocolError{Err: fmt.Errorf("encode markdown send: %w", err)}
 	}
-	_, err = active.session.request(ctx, requestID, data)
+	err = active.session.request(ctx, requestID, data)
 	return err
 }
 

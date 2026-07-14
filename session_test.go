@@ -25,7 +25,7 @@ func TestSessionRequestReceivesCorrelatedResponse(t *testing.T) {
 	}
 	result := make(chan error, 1)
 	go func() {
-		_, err := session.request(ctx, "request-1", request)
+		err := session.request(ctx, "request-1", request)
 		result <- err
 	}()
 
@@ -60,7 +60,7 @@ func TestSessionRequestTimesOutAndRemovesPending(t *testing.T) {
 	if err != nil {
 		t.Fatalf("EncodePing() error = %v", err)
 	}
-	_, err = session.request(ctx, "timeout-request", request)
+	err = session.request(ctx, "timeout-request", request)
 	if !errors.Is(err, ErrRequestTimeout) {
 		t.Fatalf("request() error = %v, want ErrRequestTimeout", err)
 	}
@@ -112,12 +112,12 @@ func TestSessionRejectsConcurrentRequestID(t *testing.T) {
 	request, _ := protocol.EncodePing("same-request")
 	first := make(chan error, 1)
 	go func() {
-		_, err := session.request(ctx, "same-request", request)
+		err := session.request(ctx, "same-request", request)
 		first <- err
 	}()
 	<-conn.writes
 
-	_, err := session.request(ctx, "same-request", request)
+	err := session.request(ctx, "same-request", request)
 	if !errors.Is(err, ErrRequestInFlight) {
 		t.Fatalf("second request error = %v, want ErrRequestInFlight", err)
 	}
@@ -195,7 +195,7 @@ func TestSessionRequestTimeoutBoundsBlockedWrite(t *testing.T) {
 	request, _ := protocol.EncodePing("blocked-write")
 	result := make(chan error, 1)
 	go func() {
-		_, err := session.request(context.Background(), "blocked-write", request)
+		err := session.request(context.Background(), "blocked-write", request)
 		result <- err
 	}()
 
@@ -226,7 +226,7 @@ func TestSessionRequestTimeoutBoundsQueuedWrite(t *testing.T) {
 	firstRequest, _ := protocol.EncodePing("first-write")
 	first := make(chan error, 1)
 	go func() {
-		_, err := session.request(context.Background(), "first-write", firstRequest)
+		err := session.request(context.Background(), "first-write", firstRequest)
 		first <- err
 	}()
 	<-conn.writeStarted
@@ -234,7 +234,7 @@ func TestSessionRequestTimeoutBoundsQueuedWrite(t *testing.T) {
 	secondRequest, _ := protocol.EncodePing("queued-write")
 	second := make(chan error, 1)
 	go func() {
-		_, err := session.request(context.Background(), "queued-write", secondRequest)
+		err := session.request(context.Background(), "queued-write", secondRequest)
 		second <- err
 	}()
 
@@ -270,7 +270,7 @@ func TestSessionRequestCancellationBeforeWriteKeepsSessionActive(t *testing.T) {
 	cancel()
 	request, _ := protocol.EncodePing("canceled-before-write")
 
-	_, err := session.request(ctx, "canceled-before-write", request)
+	err := session.request(ctx, "canceled-before-write", request)
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("request() error = %v, want context.Canceled", err)
 	}
@@ -303,7 +303,7 @@ func TestSessionRequestPreCanceledContextWithAvailableWriteGateDoesNotWrite(t *t
 			t.Fatalf("EncodePing() error = %v", err)
 		}
 
-		_, err = session.request(ctx, requestID, request)
+		err = session.request(ctx, requestID, request)
 		if !errors.Is(err, context.Canceled) {
 			t.Fatalf("request() attempt %d error = %v, want context.Canceled", i, err)
 		}

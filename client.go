@@ -169,7 +169,7 @@ func (c *Client) subscribe(ctx context.Context, current *session) error {
 	if err != nil {
 		return &ProtocolError{Err: fmt.Errorf("encode subscribe: %w", err)}
 	}
-	_, err = current.request(ctx, requestID, data)
+	err = current.request(ctx, requestID, data)
 	return err
 }
 

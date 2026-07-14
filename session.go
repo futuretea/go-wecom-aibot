@@ -93,7 +93,7 @@ func (s *session) sendHeartbeat() error {
 	if err != nil {
 		return &ProtocolError{Err: fmt.Errorf("encode heartbeat: %w", err)}
 	}
-	_, err = s.request(s.ctx, requestID, data)
+	err = s.request(s.ctx, requestID, data)
 	if errors.Is(err, ErrRequestTimeout) {
 		return &ConnectionError{Err: fmt.Errorf("heartbeat: %w", err)}
 	}
@@ -159,9 +159,9 @@ func (s *session) request(
 	ctx context.Context,
 	requestID string,
 	data []byte,
-) (protocol.Frame, error) {
+) error {
 	if err := ctx.Err(); err != nil {
-		return protocol.Frame{}, err
+		return err
 	}
 
 	requestCtx, cancel := context.WithTimeout(ctx, s.requestTimeout)
@@ -169,10 +169,10 @@ func (s *session) request(
 
 	response, err := s.registerPending(requestID)
 	if err != nil {
-		return protocol.Frame{}, err
+		return err
 	}
 	if err := s.sendPendingRequest(ctx, requestCtx, requestID, data, response); err != nil {
-		return protocol.Frame{}, err
+		return err
 	}
 	return s.awaitResponse(ctx, requestCtx, requestID, response)
 }
@@ -232,25 +232,25 @@ func (s *session) awaitResponse(
 	requestCtx context.Context,
 	requestID string,
 	response chan protocol.Frame,
-) (protocol.Frame, error) {
+) error {
 	select {
 	case frame := <-response:
 		if frame.ErrorCode != 0 {
-			return protocol.Frame{}, &APIError{
+			return &APIError{
 				Code:    frame.ErrorCode,
 				Message: frame.ErrorMessage,
 			}
 		}
-		return frame, nil
+		return nil
 	case <-requestCtx.Done():
 		s.removePending(requestID, response)
 		if ctx.Err() != nil {
-			return protocol.Frame{}, ctx.Err()
+			return ctx.Err()
 		}
-		return protocol.Frame{}, ErrRequestTimeout
+		return ErrRequestTimeout
 	case <-s.done:
 		s.removePending(requestID, response)
-		return protocol.Frame{}, s.err()
+		return s.err()
 	}
 }
 
