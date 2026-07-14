@@ -28,6 +28,75 @@ func TestDecodeTextCallbackReturnsCallbackDTO(t *testing.T) {
 	assertTextCallback(t, frame)
 }
 
+func TestDecodeRejectsInvalidTextCallbackBoundaries(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(map[string]any)
+	}{
+		{
+			name: "missing request ID",
+			mutate: func(wire map[string]any) {
+				delete(wire["headers"].(map[string]any), "req_id")
+			},
+		},
+		{
+			name: "missing message ID",
+			mutate: func(wire map[string]any) {
+				delete(wire["body"].(map[string]any), "msgid")
+			},
+		},
+		{
+			name: "missing user ID",
+			mutate: func(wire map[string]any) {
+				body := wire["body"].(map[string]any)
+				delete(body["from"].(map[string]any), "userid")
+			},
+		},
+		{
+			name: "unsupported chat type",
+			mutate: func(wire map[string]any) {
+				wire["body"].(map[string]any)["chattype"] = "unsupported"
+			},
+		},
+		{
+			name: "group chat missing chat ID",
+			mutate: func(wire map[string]any) {
+				delete(wire["body"].(map[string]any), "chatid")
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			wire := validTextCallbackWire()
+			tt.mutate(wire)
+			raw, err := json.Marshal(wire)
+			if err != nil {
+				t.Fatalf("json.Marshal() error = %v", err)
+			}
+			if _, err := Decode(raw); err == nil {
+				t.Fatal("Decode() error = nil, want rejection")
+			}
+		})
+	}
+}
+
+func validTextCallbackWire() map[string]any {
+	return map[string]any{
+		"cmd":     "aibot_msg_callback",
+		"headers": map[string]any{"req_id": "req-1"},
+		"body": map[string]any{
+			"msgid":    "msg-1",
+			"aibotid":  "bot-1",
+			"chatid":   "chat-1",
+			"chattype": "group",
+			"from":     map[string]any{"userid": "user-1"},
+			"msgtype":  "text",
+			"text":     map[string]any{"content": "hello"},
+		},
+	}
+}
+
 func assertTextCallback(t *testing.T, frame Frame) {
 	t.Helper()
 	if frame.Kind != KindTextCallback {

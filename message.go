@@ -1,10 +1,6 @@
 package wecomaibot
 
-import (
-	"fmt"
-
-	"github.com/futuretea/go-wecom-aibot/internal/protocol"
-)
+import "github.com/futuretea/go-wecom-aibot/internal/protocol"
 
 // ChatType identifies a single or group conversation.
 type ChatType string
@@ -62,22 +58,11 @@ func messageFromCallback(
 	sessionID string,
 	requestID string,
 	callback protocol.Callback,
-) (*Message, error) {
-	if sessionID == "" || requestID == "" || callback.MessageID == "" || callback.UserID == "" {
-		return nil, fmt.Errorf("invalid text callback")
-	}
-
+) *Message {
 	chatType := ChatType(callback.ChatType)
 	chatID := callback.ChatID
-	switch chatType {
-	case ChatTypeSingle:
+	if chatType == ChatTypeSingle {
 		chatID = callback.UserID
-	case ChatTypeGroup:
-		if chatID == "" {
-			return nil, fmt.Errorf("invalid group callback: missing chat id")
-		}
-	default:
-		return nil, fmt.Errorf("invalid text callback: unknown chat type %q", callback.ChatType)
 	}
 
 	message := &Message{
@@ -97,5 +82,5 @@ func messageFromCallback(
 			Text: callback.Quote.Text,
 		}
 	}
-	return message, nil
+	return message
 }

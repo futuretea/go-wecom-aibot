@@ -16,10 +16,7 @@ func TestMessageFromCallbackNormalizesSingleChatID(t *testing.T) {
 		Quote:     &protocol.Quote{Type: "text", Text: "previous"},
 	}
 
-	message, err := messageFromCallback("session", "request", callback)
-	if err != nil {
-		t.Fatalf("messageFromCallback() error = %v", err)
-	}
+	message := messageFromCallback("session", "request", callback)
 	if message.ChatID != "user" || message.ChatType != ChatTypeSingle {
 		t.Fatalf("unexpected chat: %#v", message)
 	}
@@ -31,17 +28,5 @@ func TestMessageFromCallbackNormalizesSingleChatID(t *testing.T) {
 	}
 	if message.requestID != "request" || message.sessionID != "session" {
 		t.Fatalf("message lost internal ownership: %#v", message)
-	}
-}
-
-func TestMessageFromCallbackRejectsInvalidGroup(t *testing.T) {
-	_, err := messageFromCallback("session", "request", protocol.Callback{
-		MessageID: "message",
-		ChatType:  "group",
-		UserID:    "user",
-		Text:      "hello",
-	})
-	if err == nil {
-		t.Fatal("messageFromCallback() error = nil, want error")
 	}
 }

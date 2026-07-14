@@ -39,10 +39,7 @@ func newHandlerDispatcher(handler Handler, sessionID string) *handlerDispatcher 
 }
 
 func (d *handlerDispatcher) dispatch(ctx context.Context, current *session, frame protocol.Frame) error {
-	message, err := messageFromCallback(d.sessionID, frame.RequestID, frame.Callback)
-	if err != nil {
-		return &ProtocolError{Err: err}
-	}
+	message := messageFromCallback(d.sessionID, frame.RequestID, frame.Callback)
 	select {
 	case d.semaphore <- struct{}{}:
 	case <-ctx.Done():
