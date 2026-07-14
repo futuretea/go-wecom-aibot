@@ -14,6 +14,25 @@ import (
 	"github.com/coder/websocket"
 )
 
+func TestRunRejectsNilHandlerFuncBeforeDial(t *testing.T) {
+	client, err := NewClient(Config{BotID: "bot", Secret: "secret"})
+	if err != nil {
+		t.Fatalf("NewClient() error = %v", err)
+	}
+	connector := &fakeConnector{}
+	client.connector = connector
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err = client.Run(ctx, HandlerFunc(nil))
+	if !errors.Is(err, ErrInvalidArgument) {
+		t.Errorf("Run() error = %v, want ErrInvalidArgument", err)
+	}
+	if connector.dials != 0 {
+		t.Errorf("connector dials = %d, want 0", connector.dials)
+	}
+}
+
 func TestRunHandlerCanWaitForMarkdownReply(t *testing.T) {
 	conn := newFakeConnection()
 	client, err := NewClient(Config{BotID: "bot", Secret: "secret"})

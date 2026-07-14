@@ -58,7 +58,7 @@ func NewClient(config Config) (*Client, error) {
 // Run connects the bot and handles messages until ctx is canceled or a
 // non-retryable error occurs.
 func (c *Client) Run(ctx context.Context, handler Handler) error {
-	if ctx == nil || handler == nil {
+	if handlerFunc, ok := handler.(HandlerFunc); ctx == nil || handler == nil || (ok && handlerFunc == nil) {
 		return fmt.Errorf("%w: context and handler are required", ErrInvalidArgument)
 	}
 	if !c.beginRun() {
